@@ -1,0 +1,3 @@
+[submodule "albopop-json-converter"]
+	path = albopop-json-converter
+	url = https://github.com/RicostruzioneTrasparente/albopop-json-converter.git

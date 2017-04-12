@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
 
 import sys, logging, requests, importlib, json
-#from multiprocessing import Process, Pool, Queue
+from datetime import datetime
+from threading import Thread
 from queue import Queue, Empty
 ajc = importlib.import_module("albopop-json-converter.AlbopopJsonConverter")
 converter = ajc.AlbopopJsonConverter()
 
 sources_url = "https://raw.githubusercontent.com/RicostruzioneTrasparente/rt-scrapers/master/sources.json"
 cache_file = "sources.json"
-#workers = 1
+workers = 2
+qsources = Queue()
 qitems = Queue()
 
 # Cache management
@@ -34,9 +36,8 @@ try:
             else:
                 sources[source_id] = new_source
 
-    for source_id in sources:
-        if source_id not in new_ids:
-            del sources[source_id]
+    for source_id in sources and source_id not in new_ids:
+        del sources[source_id]
 
     with open(cache_file,'w') as f:
         json.dump(sources, f)
@@ -44,31 +45,78 @@ try:
 except:
     logging.error("Fetching of remote sources failed!")
 
-# Fetch feed from each source
-def fetch(url):
-    r = requests.get(url, stream = True)
-    r.raw.decode_content = True
-    logging.warning("Fetch from %s: %d" % (url,r.status_code))
-    return converter.xml2json(r.raw)
+# Fetch feed from each source, target of a thread
+def fetch(i,iq,oq):
 
-def deliver(feed):
-    for item in converter.get_items(feed):
-        qitems.put(item)
+    # Stay alive until input queue is not empty
+    while not iq.empty():
 
-#def mul(x):
-#    logging.warning(x)
-#    return x*x
+        try:
+            source = iq.get()
+        except Empty:
+            continue
 
-#def cprint(x):
-#    print(x)
+        r = requests.get(source['feed'], stream = True)
+        r.raw.decode_content = True
+        logging.warning("Fetch from %s: %d" % (source['feed'],r.status_code))
 
-#p = Pool(processes = workers)
-#res = p.map_async(fetch, [ s['feed'] for s in sources.values() ], callback = deliver)
-#res.wait()
+        # Get items from converted feed and put them in output queue
+        jfeed = converter.xml2json(r.raw)
+        for item in converter.get_items(jfeed):
+            oq.put(item)
 
+        iq.task_done()
+
+# Populate sources queue
 for source in sources.values():
-    deliver(fetch(source['feed']))
+    qsources.put(source)
 
-while not qitems.empty():
-    print(qitems.get())
+# Run a pool of threads to consume sources queue and
+# populate items one
+threads = []
+for i in range(workers):
+    t = Thread(
+        name = "fetcher_%d" % i,
+        target = fetch,
+        args = (i,qsources,qitems)
+    )
+    threads.append(t)
+    t.start()
+
+# Generator to consume items queue
+def items(qi,qs):
+
+    n1 = 0
+    n2 = 0
+    while not ( qi.empty() and qs.empty() ):
+
+        try:
+            item = qi.get(timeout = 10)
+            qi.task_done()
+            n1 += 1
+            enclosures = item.pop('enclosure',[])
+            item_id = n1
+            yield {
+                '_op_type': 'index',
+                '_index': 'albopop-v4-'+datetime.strptime(item['pubDate'],'%a, %d %b %Y %H:%M:%S %z').strftime('%Y.%m'),
+                '_type': 'item',
+                '_id': item_id,
+                'doc': item
+            }
+            for enclosure in enclosures:
+                n2 += 1
+                enclosure_id = n2
+                yield {
+                    '_op_type': 'index',
+                    '_index': 'albopop-v4-'+datetime.strptime(item['channel']['pubDate'],'%a, %d %b %Y %H:%M:%S %z').strftime('%Y.%m'),
+                    '_type': 'enclosure',
+                    '_id': n2,
+                    'doc': enclosure,
+                    '_parent': n1
+                }
+        except Empty:
+            continue
+
+for item in items(qitems,qsources):
+    print(item)
 

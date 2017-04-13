@@ -4,6 +4,7 @@ import sys, logging, requests, importlib, json
 from datetime import datetime
 from threading import Thread
 from queue import Queue, Empty
+from elasticsearch import Elasticsearch, helpers
 ajc = importlib.import_module("albopop-json-converter.AlbopopJsonConverter")
 converter = ajc.AlbopopJsonConverter()
 
@@ -12,6 +13,7 @@ cache_file = "sources.json"
 workers = 2
 qsources = Queue()
 qitems = Queue()
+prefix = "albopop-v4-"
 
 # Cache management
 try:
@@ -36,14 +38,15 @@ try:
             else:
                 sources[source_id] = new_source
 
-    for source_id in sources and source_id not in new_ids:
-        del sources[source_id]
+    for source_id in sources:
+        if source_id not in new_ids:
+            del sources[source_id]
 
     with open(cache_file,'w') as f:
         json.dump(sources, f)
 
-except:
-    logging.error("Fetching of remote sources failed!")
+except Exception as e:
+    logging.error("Fetching of remote sources failed! %s" % e)
 
 # Fetch feed from each source, target of a thread
 def fetch(i,iq,oq):
@@ -91,32 +94,43 @@ def items(qi,qs):
     while not ( qi.empty() and qs.empty() ):
 
         try:
+
             item = qi.get(timeout = 10)
             qi.task_done()
+
             n1 += 1
             enclosures = item.pop('enclosure',[])
             item_id = n1
+            index = prefix + datetime.strptime(item['pubDate'],'%a, %d %b %Y %H:%M:%S %z').strftime('%Y.%m')
+
             yield {
                 '_op_type': 'index',
                 '_index': 'albopop-v4-'+datetime.strptime(item['pubDate'],'%a, %d %b %Y %H:%M:%S %z').strftime('%Y.%m'),
                 '_type': 'item',
-                '_id': item_id,
-                'doc': item
+                '_id': str(item_id),
+                '_source': item
             }
+
             for enclosure in enclosures:
+
                 n2 += 1
                 enclosure_id = n2
+
                 yield {
                     '_op_type': 'index',
-                    '_index': 'albopop-v4-'+datetime.strptime(item['channel']['pubDate'],'%a, %d %b %Y %H:%M:%S %z').strftime('%Y.%m'),
+                    '_index': index,
                     '_type': 'enclosure',
-                    '_id': n2,
-                    'doc': enclosure,
-                    '_parent': n1
+                    '_id': str(enclosure_id),
+                    '_source': enclosure,
+                    '_parent': str(item_id)
                 }
+
         except Empty:
             continue
 
-for item in items(qitems,qsources):
-    print(item)
+es = Elasticsearch(timeout = 60, retry_on_timeout = True)
+helpers.bulk(
+    es,
+    items(qitems,qsources)
+)
 

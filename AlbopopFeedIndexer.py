@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
-import sys, logging, requests, importlib, json, uuid
+import sys, logging, requests, importlib, json, uuid, hashlib
+from pathlib import Path
 from datetime import datetime
 from threading import Thread
 from queue import Queue, Empty
@@ -64,6 +65,8 @@ def fetch(i,qs,qi,qe):
         except Empty:
             continue
 
+        # The channel UUID comes from original id
+        channel_uuid = uuid.UUID(hashlib.md5(str(source['id']).encode('utf8')).hexdigest())
         r = requests.get(source['feed'], stream = True)
         r.raw.decode_content = True
         logging.warning("Fetch from %s: %d" % (r.url,r.status_code))
@@ -72,18 +75,24 @@ def fetch(i,qs,qi,qe):
         jfeed = converter.xml2json(r.raw)
         for item in converter.get_items(jfeed):
 
-            # Generate an universal unique id for item
-            item_uuid = uuid.uuid4()
+            # Generate an universal unique id for item in the namespace of channel
+            item_uuid = uuid.uuid5(
+                channel_uuid,
+                hashlib.md5(str(item['guid']).encode('utf8')).hexdigest()
+            )
             item['uuid'] = str(item_uuid)
 
             # Loop on enclosures
             for index in range(len(item.get('enclosure',[]))):
-                # Generate an universal unique id for enclosure
-                enclosure_uuid = uuid.uuid4()
+                # Generate an universal unique id for enclosure in the namespace of item
+                enclosure_uuid = uuid.uuid5(
+                    item_uuid,
+                    hashlib.md5(str(item['enclosure'][index]['url']).encode('utf8')).hexdigest()
+                )
                 item['enclosure'][index]['uuid'] = str(enclosure_uuid)
-                # The file name of downloaded enclosure is the enclosure uuid in the namespace of the item uuid
+                # The file name of downloaded enclosure is the enclosure uuid plus file extension
                 item['enclosure'][index]['filename'] = "%s.%s" % (
-                    uuid.uuid5(item_uuid,str(enclosure_uuid)),
+                    item['enclosure'][index]['uuid'],
                     item['enclosure'][index]['type'].split('/')[-1]
                 )
                 # Put enclosure in download queue
@@ -111,15 +120,19 @@ def download(i,qe,qi,qs):
         except Empty:
             continue
 
-        logging.warning("Download %s from %s" % (enclosure['filename'],enclosure['url']))
-        r = requests.get(enclosure['url'], stream = True)
+        p = Path(download_dir, enclosure['filename'])
+        if p.is_file():
+            logging.warning("Download %s skipped, file exists" % enclosure['filename'])
+        else:
+            logging.warning("Download %s from %s" % (enclosure['filename'],enclosure['url']))
+            r = requests.get(enclosure['url'], stream = True)
 
-        try:
-            with open(download_dir+'/'+enclosure['filename'],'wb') as f:
-                for chunk in r.iter_content(chunk_size):
-                    f.write(chunk)
-        except Exception as e:
-            logging.error("Enclosure download failed: %s" % e)
+            try:
+                with open(download_dir+'/'+enclosure['filename'],'wb') as f:
+                    for chunk in r.iter_content(chunk_size):
+                        f.write(chunk)
+            except Exception as e:
+                logging.error("Enclosure download failed: %s" % e)
 
         qe.task_done()
 

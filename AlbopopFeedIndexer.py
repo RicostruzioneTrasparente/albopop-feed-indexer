@@ -47,6 +47,7 @@ def fetch(i,qs,qi,qe):
         jfeed = converter.xml2json(r.raw)
         for item in converter.get_items(jfeed):
 
+            item['channel']['uuid'] = str(channel_uuid)
             # Generate an universal unique id for item in the namespace of channel
             item_uuid = uuid.uuid3(
                 channel_uuid,
@@ -64,8 +65,13 @@ def fetch(i,qs,qi,qe):
                 item['enclosure'][index]['uuid'] = str(enclosure_uuid)
                 # The file name of downloaded enclosure is the enclosure uuid plus file extension
                 item['enclosure'][index]['filename'] = "%s.%s" % (
-                    item['enclosure'][index]['uuid'],
+                    enclosure_uuid,
                     item['enclosure'][index]['type'].split('/')[-1]
+                )
+                item['enclosure'][index]['path'] = "%s/%s/%s" % (
+                    channel_uuid,
+                    item_uuid,
+                    item['enclosure'][index]['filename']
                 )
                 # Put enclosure in download queue
                 logging.warning("Put enclosure %s" % item['enclosure'][index]['uuid'])
@@ -92,15 +98,17 @@ def download(i,qe):
         except Empty:
             continue
 
-        p = Path(download_dir, enclosure['filename'])
-        if p.is_file():
+        document = Path(download_dir, enclosure['path'])
+        if not document.parent.exists():
+            document.parent.mkdir(parents=True)
+        if document.is_file():
             logging.warning("Download %s skipped, file exists" % enclosure['filename'])
         else:
             logging.warning("Download %s from %s" % (enclosure['filename'],enclosure['url']))
             r = requests.get(enclosure['url'], stream = True)
 
             try:
-                with open(download_dir+'/'+enclosure['filename'],'wb') as f:
+                with open(str(document),'wb') as f:
                     for chunk in r.iter_content(chunk_size):
                         f.write(chunk)
             except Exception as e:

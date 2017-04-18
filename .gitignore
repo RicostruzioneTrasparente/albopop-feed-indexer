@@ -1,1 +1,5 @@
 sources.json
+downloads
+downloads/
+*.service
+*.timer

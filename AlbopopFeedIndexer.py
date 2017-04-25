@@ -44,7 +44,13 @@ def fetch(i,qs,qi,qe):
         logging.warning("Fetch from %s: %d" % (r.url,r.status_code))
 
         # Get items from converted feed and put them in output queue
-        jfeed = converter.xml2json(r.raw)
+        try:
+            jfeed = converter.xml2json(r.raw)
+        except Exception as e:
+            logging.warning("Errors in convertion: %s" % e)
+            qs.task_done()
+            continue
+
         for item in converter.get_items(jfeed):
 
             item['channel']['uuid'] = str(channel_uuid)
@@ -63,6 +69,8 @@ def fetch(i,qs,qi,qe):
                     hashlib.md5(str(item['enclosure'][index]['url']).encode('utf8')).hexdigest()
                 )
                 item['enclosure'][index]['uuid'] = str(enclosure_uuid)
+                item['enclosure'][index]['item'] = { "uuid": str(item_uuid) }
+                item['enclosure'][index]['channel'] = { "uuid": str(channel_uuid) }
                 # The file name of downloaded enclosure is the enclosure uuid plus file extension
                 item['enclosure'][index]['filename'] = "%s.%s" % (
                     enclosure_uuid,
@@ -129,9 +137,13 @@ def items(qi):
             continue
 
         enclosures = item.pop('enclosure',[])
+        item['enclosure'] = [
+            { "uuid": e['uuid'], "path": e['path'] }
+            for e in enclosures
+        ]
         index = prefix + datetime.strptime(item['pubDate'],'%a, %d %b %Y %H:%M:%S %z').strftime('%Y.%m')
 
-        logging.warning("Index item %s" % item['uuid'])
+        logging.warning("Index item %s with %d enclosures" % ( item['uuid'] , len(item['enclosure']) ))
         yield {
             '_op_type': 'index',
             '_index': index,

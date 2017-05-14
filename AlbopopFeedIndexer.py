@@ -10,12 +10,13 @@ ajc = importlib.import_module("albopop-json-converter.AlbopopJsonConverter")
 converter = ajc.AlbopopJsonConverter()
 
 sources_url = "https://raw.githubusercontent.com/RicostruzioneTrasparente/rt-scrapers/master/sources.json"
-cache_file = "sources.json"
+base_dir = "."
+cache_file = "%s/sources.json" % base_dir
 workers = 5
 qsources = Queue()
 qitems = Queue()
 qenclosures = Queue()
-download_dir = "./downloads"
+download_dir = "%s/downloads" % base_dir
 chunk_size = 1024*1024 # 1MB
 prefix = "albopop-v4-"
 
@@ -112,7 +113,7 @@ def download(i,qe):
         if document.is_file():
             logging.warning("Download %s skipped, file exists" % enclosure['filename'])
         else:
-            logging.warning("Download %s from %s" % (enclosure['filename'],enclosure['url']))
+            logging.warning("Download %s from %s to %s" % (enclosure['filename'],enclosure['url'],document))
             r = requests.get(enclosure['url'], stream = True)
 
             try:

@@ -174,7 +174,8 @@ def index(i,qi):
     es = Elasticsearch(timeout = 60, retry_on_timeout = True)
     helpers.bulk(
         es,
-        items(qi)
+        items(qi),
+        raise_on_error = False
     )
 
 # Cache management

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-import sys, logging, requests, importlib, json, uuid, hashlib
+import sys, logging, requests, importlib, json, uuid, hashlib, mimetypes
 from pathlib import Path
 from datetime import datetime
 from threading import Thread
@@ -73,9 +73,9 @@ def fetch(i,qs,qi,qe):
                 item['enclosure'][index]['item'] = { "uuid": str(item_uuid) }
                 item['enclosure'][index]['channel'] = { "uuid": str(channel_uuid) }
                 # The file name of downloaded enclosure is the enclosure uuid plus file extension
-                item['enclosure'][index]['filename'] = "%s.%s" % (
+                item['enclosure'][index]['filename'] = "%s%s" % (
                     enclosure_uuid,
-                    item['enclosure'][index]['type'].split('/')[-1]
+                    mimetypes.guess_extension(item['enclosure'][index]['type']) or ""
                 )
                 item['enclosure'][index]['path'] = "%s/%s/%s" % (
                     channel_uuid,

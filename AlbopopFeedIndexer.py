@@ -146,7 +146,7 @@ def items(qi):
 
         logging.warning("Index item %s with %d enclosures" % ( item['uuid'] , len(item['enclosure']) ))
         yield {
-            '_op_type': 'index',
+            '_op_type': 'create',
             '_index': index,
             '_type': 'item',
             '_id': item['uuid'],
@@ -157,7 +157,7 @@ def items(qi):
 
             logging.warning("Index enclosure %s" % enclosure['uuid'])
             yield {
-                '_op_type': 'index',
+                '_op_type': 'create',
                 '_index': index,
                 '_type': 'enclosure',
                 '_id': enclosure['uuid'],
@@ -250,18 +250,22 @@ ti.start()
 for source in sources.values():
     qsources.put(source)
 is_sourcing = False
+logging.warning("Sourcing ends!")
 
 # Wait for fetchers
 for tf in fetchers:
     tf.join()
 is_fetching = False
+logging.warning("Fetching ends!")
 
 # Wait for indexer
 ti.join()
 is_indexing = False
+logging.warning("Indexing ends!")
 
 # Wait for downloaders
 for td in downloaders:
     td.join()
 is_downloading = False
+logging.warning("Downloading ends!")
 

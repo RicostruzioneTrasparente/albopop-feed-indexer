@@ -195,7 +195,7 @@ try:
     for new_source in r.json():
         source_id = new_source['id']
         new_ids.append(source_id)
-        if new_source.get('feed'):
+        if new_source.get('active') and new_source.get('feed'):
             if source_id in sources:
                 sources[source_id].update(new_source)
             else:

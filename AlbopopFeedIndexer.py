@@ -201,7 +201,8 @@ try:
             else:
                 sources[source_id] = new_source
 
-    for source_id in sources:
+    old_ids = sources.keys()
+    for source_id in old_ids:
         if source_id not in new_ids:
             del sources[source_id]
 

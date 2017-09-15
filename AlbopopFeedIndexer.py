@@ -108,8 +108,13 @@ def download(i,qe):
             continue
 
         document = Path(download_dir, enclosure['path'])
+
         if not document.parent.exists():
-            document.parent.mkdir(parents=True)
+            try:
+                document.parent.mkdir(parents=True)
+            except Exception as e:
+                logging.error("Enclosure download failed: %s" % e)
+
         if document.is_file():
             logging.warning("Download %s skipped, file exists" % enclosure['filename'])
         else:
